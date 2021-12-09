@@ -1,0 +1,397 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+#Load packages
+packages <- c('tidyverse','haven', 'descr', 'fmsb', 'lsr', 'gridExtra','rcompanion','odds.n.ends','lmtest','tableone','car')
+purrr::walk(packages,library,character.only=T)
+```
+
+```{r}
+#Load csv file 
+charges <- read.csv(file = "finalinsurance.csv")
+```
+
+```{r}
+#See summary of data 
+summary(object = charges)
+```
+sex and smoker will need to be recoded as to better represent their categorical nature. 
+
+```{r}
+#Recoding variables and cleaning data to see clean visualizations 
+charges.cleaned <- charges %>% 
+select(charges, sex, smoker, bmi) %>%
+mutate(smoker = recode_factor(.x = smoker, 
+                           `0` = 'No', 
+                           `1` = 'Yes')) %>%
+mutate(sex = recode_factor(.x = sex, 
+                           `0` = 'Male', 
+                           `1` = 'Female'))
+#Check recoding  
+summary(object = charges.cleaned)
+```
+```{r}
+#Descriptive statistics for charges cleaned data
+tableone::CreateTableOne(data = charges.cleaned, 
+                         vars = c('charges','sex','smoker','bmi'))
+```
+Interpretation: The average charge was very high as it was $13,270 with a standard deviation of $12,110. The ratio of females to males was fairly equal. The majority of participants were nonsmokers(about 80%). Additionally, the average BMI was high with 30.66. 
+
+```{r}
+#Visualization of sex 
+nrow(charges.cleaned)
+ncol(charges.cleaned)
+head(charges.cleaned)
+sex.charges <- ggplot(charges.cleaned, aes(x = sex,y = charges)) + stat_summary(fun.y="mean", geom="bar") + theme_minimal()
+sex.charges
+
+```
+Interpretation: Overall, males  have slightly higher charges than females based on the mean. Based on the graph, we predict that sex is not a significant contributor to charges incurred. We will examine this relationship further. 
+
+```{r}
+#visualization of smoker variable 
+nrow(charges.cleaned)
+ncol(charges.cleaned)
+head(charges.cleaned)
+smoker.charges <- ggplot(charges.cleaned, aes(x = smoker,y = charges)) + stat_summary(fun.y="mean", geom="bar") + theme_minimal()
+smoker.charges
+```
+Interpretation: As we expected, the mean charges incurred were higher for smokers than non-smokers. We predict that smoking status will have a significant relationship with charges as we continue our analysis. 
+Smokers paid significantly more than nonsmokers in terms of average chargers (over $30,000 compared to under $10,000). 
+```{r}
+#visualization of bmi variable 
+charges.cleaned %>% 
+ggplot(data = charges.cleaned, mapping = aes(x = bmi, y = charges)) + 
+geom_point() +
+geom_smooth(color = "blue") +
+theme_bw()
+```
+interpretation: Overall, as BMI increases, charges tend to increase. After a BMI of 30, there is a cluster of high charges. We predict that BMI is a significant predictor of charge outcome. 
+
+################### Statistical Analysis using T-test#######
+Step 1: Null and Alternate Hypothesis 
+H0: The mean value of charges is the same across smokers and nonsmokers 
+HA: The mean value of charges is not the same across smokers and nonsmokers 
+
+Step 2: Computing test statistic 
+```{r}
+#conduct ttest to compare charges for smokers and nonsmokers
+t.test(charges.cleaned$charges ~ charges.cleaned$smoker , var.equal = TRUE)
+```
+Interpretation:  The mean charges for non-smokers was $8,434 and the mean charges for smokers was $32,050. The p-value was well under 0.05. 
+
+NHST Step 3: Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true)
+
+The p-value in this case is much less than .05.
+
+NHST Steps 4 and 5: Interpret the probability and write a conclusion
+
+ The results show a statistically significant difference of the means of the charged variable by smoking status group [p < 2.2e-16, so p < .05].
+
+```{r}
+#Check normality assumption 
+charges.cleaned %>%
+group_by(smoker) %>%
+ggplot(aes(x = charges, fill = smoker)) +
+geom_histogram()
+```
+Interpretation: The normality assumption was not met for the smoker graph and the nonsmoker graph. 
+
+
+Levene's test:
+```{r}
+#Conducting Levene's test to assess the equality of variances for a variable calculated for two or more groups. It tests the null hypothesis that the population variances are equal
+car::leveneTest(charges.cleaned$charges, charges.cleaned$smoker)
+
+```   
+Interpretation: the p-value is < 0.05, so we fail to reject the null hypothesis. This means that the population variances are equal. This assumption was met. 
+
+Interpretation:
+ The results were statistically significant so the null hypothesis was rejected.
+check for assumptions to see if an alternative test is needed
+Independent-samples t-test assumptions:
+Continuous variable and two independent groups - This assumption is met. 
+Independent observations - This assumption is met. 
+Normal distribution in each group - This assumption is not met, the distributions are right-skewed
+Equal variances for each group - This assumption is met. 
+It is met according to Levene't test results. 
+
+############# Conducting alternative test as assumptions failed - Kolmogorov-Smirnov test ##########################
+
+```{r}
+# get vectors for smokers and nonsmokers 
+smoker.charges <- charges.cleaned %>%
+filter(smoker == "Yes") %>%
+pull(var = charges)
+nonsmoker.charges <- charges.cleaned %>%
+filter(smoker == "No") %>%
+#pull() function is useful for getting a single variable out of a data frame as a stand-alone vector
+pull(var = charges)
+```
+
+
+```{r}
+#Conduct the test 
+ks.test(x = smoker.charges, y = nonsmoker.charges)
+```
+
+```{r}
+#NHST STEP 3: Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true)
+
+#The p-value is shown in scientific notation in the output as < 2.2e-16 which is well below .05.
+
+#NHST STEPS 4 and 5: Interpret the probability and write a conclusion
+
+# The K-S test compared the distribution of charges between smokers and nonsmokers in the United States and found a statistically significant difference between the two groups (D = .89; p < .05).
+# The test statistic, D, is the maximum distance between the two empirical cumulative distribution functions (ECDFs), which are a special type of probability distribution showing the cumulative probability of the values of a variable.
+```
+interpretation: the Kolmogorov-Smirnov test was used as an alternative test and found the p-value to be well below 0.05, so we were able to reject the null hypothesis and confirm that there was a statistically significant difference in the means between the two groups; smokers and non-smokers. 
+
+
+#############Statistical Analysis using Pearson's R ##############
+charges and bmi 
+NHST Step 1: Writing the null and alternate hypotheses
+
+H0: There is no relationship between the two variables (r = 0).
+HA: There is a relationship between the two variables (r ≠ 0).
+
+NHST Step 2: Computing the test statistic 
+```{r}
+#test for correlation coefficient
+cor.test(x = charges.cleaned$bmi,
+y = charges.cleaned$charges)
+```
+interpretation: correlation coefficient of 0.198, and a 95% confidence interval of 0.15-0.25. 
+
+NHST Step 3: Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true)
+
+p-value was found to be < 0.05(p-value = 2.459e-13)
+
+NHST Steps 4 and 5: Interpret the probability and write a conclusion
+
+The p-value was very small, well under 0.05. 
+This p-value shows that it is unlikely that this correlation would happen in the sample if there was not a positive correlation between bmi and charges in the population that this sample came from. 
+The relationship correlation, r= 0.198, was observed between charges and bmi. As bmi increases, so did charges but the correlation is weak. 
+
+Final interpretation: 
+The bmi in a population of patients is statistically significantly, positively, and weakly correlated with the charges incurred in the population (r = 0.198, t(95)= 7.4, p<0.05). As the value of bmi goes up, the charges also go up. While the correlation is 0.198 in the sample, it is likely between 0.15 and 0.25 in the population (95% CI .15-.25)
+
+
+########check assumptions for each pair of variables#####
+
+charges and bmi 
+```{r}
+#ASSUMPTION 1: Observations are independent - met.
+#ASSUMPTION 2: Both variables are continuous - met.
+#ASSUMPTION 3: Both variables are normally distributed.
+# check normality of charges 
+charges.cleaned %>%
+ggplot(aes(x = charges, fill = charges)) +
+geom_histogram()
+```
+interpretation: charges is not normally distributed. this plot shows it is right-skewed. 
+
+```{r}
+# check normality of bmi 
+charges.cleaned %>%
+ggplot(aes(x = bmi, fill = bmi)) +
+geom_histogram()
+```
+interpretation: the distribution is normal. bmi met the normality asumption 
+
+ASSUMPTION 4: The relationship between the two variables is linear (linearity).
+```{r}
+#checking for linearity 
+
+charges.cleaned %>%
+ggplot(aes(x = bmi, y = charges))+
+geom_point(aes(size = "Observation"), color = "gray60", alpha = .6) +
+geom_smooth(se = FALSE, aes(color = "Loess curve")) +
+geom_smooth(method = lm, se = FALSE, aes(color = "linear")) +
+theme_minimal() +
+labs(x = "BMI",
+y = "charges") +
+scale_color_manual(name = "Type of fit line",
+values = c("dodgerblue2", "deeppink")) +
+scale_size_manual(values = 1.5, name = "")
+```
+interpretation: except for some deviation at extremely high BMIs (40/50), the loess curve shows the relationship to be close to linear. the assumption appears to be met. 
+
+ASSUMPTION 5: The variance is constant with the points distributed equally around the line (homoscedasticity).
+
+```{r}
+#The Breusch-Pagan test could be used to test the null hypothesis that the variance is constant around the line.
+# Breusch-Pagan test for constant variance
+testVar <- lmtest::bptest(formula = charges.cleaned$charges ~ charges.cleaned$bmi)
+testVar
+```
+interpretation: we reject the null hypothesis that the variance is constant because the p value is very small (p-value < 2.2e-16). this assumption is not met 
+
+In all, the correlation analysis for charges and bmi fully met criteria for 3 out of the 5 assumptions and was partially met for normality. It did not meet the homeodastasticty assumption. 
+
+
+males and water access alternative method - spearmans
+```{r}
+#NHST Step 1: Write the null and alternate hypotheses
+#H0: There is no correlation between bmi and charges (ρ = 0)
+#HA: There is a correlation between bmi and charges (ρ ≠ 0)
+
+#NHST Step 2: Compute the test statistic
+```
+
+```{r}
+#Adding method="spearman"
+# spearman correlation females in school and water access
+spear.charges.bmi <- cor.test(x = charges.cleaned$bmi,
+y = charges.cleaned$charges,
+method = "spearman")
+spear.charges.bmi
+```
+Interpretation:
+While Pearson’s r between bmi and charges was 0.198, rs was slightly lower at 0.119.
+
+NHST Step 3: Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true)
+
+The p-value is < 2.2e-16 in the output for the Spearman analysis.
+
+NHST Steps 4 and 5: Interpret the probability and write a conclusion
+
+Null hypothesis is rejected.
+
+FINAL INTERPRETATION
+
+There was a statistically significant slightly positive correlation between charges and bmi (rs = 0.119; p < .001). As the bmi value rises for individuals in the population, so do they charges incurred by the patients. 
+
+
+Other assumptions for rs:
+
+The variables must be at least ordinal or even closer to continuous. -----The first assumption was met; the two variables were continuous.
+The relationship between the two variables must be monotonic.
+A monotonic relationship is a relationship that goes in only one direction.
+The values of bmil consistently go up while the charges go up. 
+The relationship does not change direction.
+rs met more assumptions than Pearson’s r. 
+
+Final interpretation: 
+The bmi in a population of patients is statistically significantly, positively, and weakly correlated with the charges incurred in the population (r = 0.198, t(95)= 7.4, p<0.05). As the value of bmi goes up, the charges also go up. While the correlation is 0.198 in the sample, it is likely between 0.15 and 0.25 in the population (95% CI .15-.25). When using Spearman's Rho, it was observed that the correlation was still slightly positive and weak (0.119; p < 0.119)
+
+###########################MULTIPLE LINEAR REGRESSION################################
+linear regression: charges by smoker status, sex, and bmi in a population of patients. 
+
+```{r}
+charges.cleaned.linearregression <- lm(formula = charges ~ bmi + smoker + sex, data = charges.cleaned)
+
+
+summary(object = charges.cleaned.linearregression)
+confint(charges.cleaned.linearregression)
+```
+
+#######CHECKING THE LINEAR REGRESSION MODEL ASSUMPTIONS#####
+#Independent observations Assumption: this assumption was met. 
+
+#Continuous outcome Assumption
+ The charges variable is measured in dollars and can take any value of zero or higher. 
+ This assumption was met. 
+ 
+#Linearity Assumption CHeck 
+Linearity by plotting a scatter plot using ggplot
+```{r}
+#checking linearity for bmi 
+charges.cleaned %>%
+ggplot(aes(x = bmi, y = charges))+
+geom_point(aes(size = "Observation"), color = "gray60", alpha = .6) +
+geom_smooth(se = FALSE, aes(color = "Loess curve")) +
+geom_smooth(method = lm, se = FALSE, aes(color = "linear")) +
+theme_minimal() +
+labs(x = "BMI",
+y = "charges") +
+scale_color_manual(name = "Type of fit line",
+values = c("dodgerblue2", "deeppink")) +
+scale_size_manual(values = 1.5, name = "")
+
+```
+The linearity assumption for the BMI variable was met. 
+```{r}
+charges.cleaned %>%
+  ggplot(charges.cleaned, mapping = aes(x = sex, y= charges)) + 
+    geom_point() + 
+    labs(y = "Charges", x = "Sex") +
+    #geom_smooth(method = "lm", formula= y ~ x,  se = F, aes(group = 1), col = "black") + 
+    theme_minimal()
+    
+```
+Linearity is met for sex variable
+
+#Checking for linearity in smoker variable 
+
+```{r}
+charges.cleaned %>%
+  ggplot(charges.cleaned, mapping = aes(x = smoker, y= charges)) + 
+    geom_point() + 
+    labs(y = "Charges", x = "Smoker Status") +
+    geom_smooth(method = "lm", formula= y ~ x,  se = F, aes(group = 1), col = "black") + 
+    theme_minimal()
+    
+```
+The Linearity assumption was met for smoker variable. 
+
+Interpretation: Linearity was met for the relationship between charges(IV) and our dependent variables. Because sex and smoker create only two values, they are linear in nature. 
+
+
+#Constant Variance Check: Homeodasticity Assumption 
+Constant variance using bptest()
+```{r}
+#testing for equal variance
+const.var.test <- lmtest::bptest(formula = charges ~ bmi + smoker + sex, data = charges.cleaned)
+const.var.test
+```
+Interpretation:
+The Breusch-Pagan test statistic has a tiny p-value (BP = 80.5; p < .001), indicating that the null hypothesis of constant variance would be rejected.
+this assumption was not met. 
+
+#No Multicolinearity Assumption Check 
+```{r}
+# compute GVIF
+car::vif(mod = charges.cleaned.linearregression)
+```
+Interpretation:
+* None of the values have a value of 2.5 or higher, so there is no discernable problem with multicollinearity. This assumption is met. 
+
+
+#Indpendence of Residuals Assumption Check 
+ The Durbin-Watson test, which can be used to determine whether the model violates the assumption of independent residuals.
+H0: the residuals are independent.
+HA: the residuals are not independent.
+A Durbin-Watson or D-W statistic of 2 indicates perfectly independent residuals.
+```{r}
+lmtest::dwtest(formula = charges ~ bmi + smoker + sex, data = charges.cleaned)
+```
+Interpretation:
+The D-W statistic is near 2 and the p-value was high, so we conclude that the null hypothesis is retained. This assumption is met. 
+
+#Normally Distributed Residuals Assumption Check 
+```{r}
+# check residual plot of independent variables (sex, smoker, bmi) vs dependent variable (charges) using linear regression model created above 
+
+plot(charges.cleaned.linearregression, which = 2) 
+```
+interpretation: from the graph above, we can see the residuals are roughly normally distributed. The up-swing in residuals at the left and up--swing in residuals at the right of the plot are apparent. This assumption is met. 
+
+######### Interpreting the multiple regression model results####
+
+#A linear regression model including sex, smoking status, and bmi of patients in a population to explain charges incurred by said patients was statistically significant. After assumption checking, all assumptions were found to be met in this model except for the homeodasticity assumption tested by the bptest. The model explained 66%  of the variation in charges. The Radj2=.6573 indicated that 66% of the variation in charges was accounted for by this model that has sex, smoker status, and bmi in it. 
+
+#Smoker status and bmi were both significant predictors of charge, (p<2 e-16). Sex, in contrast was not a significant predictor of charges incurred (p = 0.464). Smokers in this sample are associated with paying $23620.85 more than a non smoker. The 95% confidence interval showed being a smoker is assocaited with a $22675.95 to $24565.74 increase in charges. For every incremental increase in bmi, charges are associated with $389.09 increase in charges in the sample. The 95% CI showed bmi increase is associated with a $326.66 to $451.53 of charges in the population. 
+
+#Overall, the results suggest that patients who smoke and patients who have higher bmis will have higher charges on their care.
+
+
